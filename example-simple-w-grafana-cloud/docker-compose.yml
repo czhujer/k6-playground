@@ -1,0 +1,89 @@
+---
+version: "3.8"
+
+#volumes:
+#  esdata01:
+#    driver: local
+
+networks:
+  default:
+    # name: k6-playground-monitoring
+    external: false
+
+configs:
+  collector_conf:
+    file: ./confs/collector.yml
+
+services:
+  otel-collector:
+    # container_name: otel-col
+    deploy:
+      resources:
+        limits:
+          memory: 125M
+    ports:
+      - "4317"          # OTLP over gRPC receiver
+      - "4318"          # OTLP over HTTP receiver
+    # https://hub.docker.com/r/otel/opentelemetry-collector-contrib/tags
+    image: otel/opentelemetry-collector-contrib:0.88.0
+    configs:
+      - source: collector_conf
+        target: /conf/collector.yml
+    command: ["--config=/conf/collector.yml"]
+    # https://docs.docker.com/compose/environment-variables/set-environment-variables/#use-the-environment-attribute
+    environment:
+      # lightstep stuff
+      - LS_ACCESS_TOKEN=${LS_ACCESS_TOKEN}
+      # new relic stuff
+      # https://docs.newrelic.com/docs/infrastructure/prometheus-integrations/install-configure-remote-write/set-your-prometheus-remote-write-integration/
+      - PROMETHEUS_CLUSTER_NAME="k6-playground-prometheus"
+      - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY}
+    volumes:
+      - /:/hostfs
+#      - /var/run/docker.sock:/var/run/docker.sock
+  k6:
+    image: grafana/k6:0.47.0
+    command:
+      - run
+      - /scripts/02-web-service-stages.js
+      - -o
+      - experimental-prometheus-rw
+#    networks:
+#      - monitoring
+    ports:
+      - "6565:6565"
+    environment:
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+    volumes:
+      - ./02-web-service-stages.js:/scripts/02-web-service-stages.js
+
+  grafana:
+    # https://hub.docker.com/r/grafana/grafana/tags
+    image: grafana/grafana:latest
+#    networks:
+#      - monitoring
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_BASIC_ENABLED=false
+    volumes:
+#      - ./dashboards:/var/lib/grafana/dashboards
+#      - ./grafana-dashboard.yaml:/etc/grafana/provisioning/dashboards/dashboard.yaml
+      - ./grafana/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/datasource.yaml
+
+  prometheus:
+    image: prom/prometheus:v2.47.2
+#    environment:
+#      - OTEL_TRACES_SAMPLER=always_on
+    command:
+#      - '--log.level=debug'
+      - '--enable-feature=remote-write-receiver'
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    volumes:
+      - "./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml"
+#    networks:
+#      - monitoring
+    ports:
+      - 9090:9090

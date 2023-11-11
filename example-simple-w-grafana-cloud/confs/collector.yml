@@ -1,0 +1,163 @@
+extensions:
+  basicauth/gc-traces:
+    client_auth:
+      username: 733786
+      password: ""
+  basicauth/gc-metrics:
+    client_auth:
+      username: 1271273
+      password: ""
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+
+#  docker_stats:
+#    endpoint: unix:///var/run/docker.sock
+#    collection_interval: 5s
+#    timeout: 20s
+#    api_version: 1.24
+
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      paging:
+      load:
+#      process:
+#      processes:
+#      filesystem:
+#      network:
+#      memory:
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+    root_path: /hostfs
+  hostmetrics/disk:
+    collection_interval: 1m
+    scrapers:
+      disk:
+      filesystem:
+    root_path: /hostfs
+
+  prometheus:
+    config:
+      global:
+        scrape_interval: 10s
+        scrape_timeout: 5s
+        evaluation_interval: 10s
+      scrape_configs:
+#        - job_name: 'otel-collector'
+#          scrape_interval: 15s
+#          static_configs:
+#            - targets: ['localhost:8888']
+#        - job_name: 'grafana'
+#          scrape_interval: 15s
+#          static_configs:
+#            - targets: ['grafana:3000']
+        - job_name: 'federate'
+          scrape_interval: 5s
+          honor_labels: true
+          metrics_path: '/federate'
+          params:
+            'match[]':
+              - '{job="prometheus",__name__!="scrape_series_added"}'
+              - '{__name__=~"[a-z0-9A-Z].*",job!="prometheus"}'
+#              - '{__name__=~"k6.*"}'
+          static_configs:
+            - targets:
+                - 'prometheus:9090'
+
+processors:
+  batch:
+  probabilistic_sampler/sampleAll:
+    sampling_percentage: 100
+  attributes/addServiceEnvironment:
+    actions:
+      - key: service.environment
+        value: sandbox
+        action: insert
+  attributes/addServiceCluster:
+    actions:
+      - key: service.cluster
+        value: patrik-majer-playground
+        action: insert
+
+exporters:
+  logging:
+    loglevel: debug
+  otlp/lighstep:
+    endpoint: ingest.lightstep.com:443
+  # https://opentelemetry.io/docs/collector/configuration/#configuration-environment-variables
+    headers: { "lightstep-access-token": "${env:LS_ACCESS_TOKEN}" }
+  otlp/grafanacloud:
+    endpoint: tempo-prod-10-prod-eu-west-2.grafana.net:443
+    tls:
+      insecure: false
+    auth:
+      authenticator: basicauth/gc-traces
+  otlp/newrelic:
+    endpoint: https://otlp.eu01.nr-data.net:4317
+    headers:
+      api-key: ${env:NEW_RELIC_LICENSE_KEY}
+  # https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/prometheusremotewriteexporter/README.md
+  prometheusremotewrite/grafanacloud:
+    endpoint: https://prometheus-prod-24-prod-eu-west-2.grafana.net/api/prom/push
+    auth:
+      authenticator: basicauth/gc-metrics
+#  prometheusremotewrite/newrelic:
+#    endpoint: https://metric-api.newrelic.com/prometheus/v1/write?prometheus_server={$env:PROMETHEUS_CLUSTER_NAME}
+#    authorization:
+#      credentials:
+#        key: value
+#        name: nr-license-key
+service:
+  extensions:
+    - basicauth/gc-traces
+    - basicauth/gc-metrics
+#  telemetry:
+#    logs:
+#      level: DEBUG
+  pipelines:
+    traces:
+      receivers:
+        - otlp
+      processors:
+        - attributes/addServiceEnvironment
+        - attributes/addServiceCluster
+        - batch
+      exporters:
+#        - logging
+#        - otlp/lighstep
+        - otlp/newrelic
+    metrics/otlp:
+      receivers: [ otlp ]
+      processors: [ batch ]
+      exporters: [logging, prometheusremotewrite/grafanacloud ]
+#      exporters: [ otlp/grafanacloud ]
+    metrics/federatedprometheus:
+      receivers:
+        - prometheus
+      processors:
+        - attributes/addServiceEnvironment
+        - attributes/addServiceCluster
+        - batch
+      exporters:
+        - prometheusremotewrite/grafanacloud
+#        - otlp/lighstep
+    metrics/system:
+      receivers: [ hostmetrics, hostmetrics/disk ]
+      processors:
+        - attributes/addServiceEnvironment
+        - attributes/addServiceCluster
+        - batch
+      exporters:
+        - prometheusremotewrite/grafanacloud
+#        - otlp/lighstep
