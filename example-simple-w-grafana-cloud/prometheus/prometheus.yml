@@ -27,4 +27,4 @@ scrape_configs:
 #    # password and password_file are mutually exclusive.
 #    basic_auth:
 #      username: 1271273
-#      password: "glc_eyJvIjoiOTgyNjE4IiwibiI6InN0YWNrLTc4MTY4Ni1odC13cml0ZS10ZXN0MiIsImsiOiJuMWhpOVY4dkRKZThDU0FwVEw4Njk3ODAiLCJtIjp7InIiOiJwcm9kLWV1LXdlc3QtMiJ9fQ=="
+#      password: ""
