@@ -13,6 +13,7 @@ receivers:
     protocols:
       grpc:
         endpoint: 0.0.0.0:4317
+#        compression: snappy
       http:
 
 #  docker_stats:
@@ -62,14 +63,18 @@ receivers:
 #          scrape_interval: 15s
 #          static_configs:
 #            - targets: ['grafana:3000']
+        # https://prometheus.io/docs/prometheus/latest/federation/
         - job_name: 'federate'
           scrape_interval: 5s
-          honor_labels: true
+          # !! honor_labels: "true" is not really working (with federate)
+          # some labels are "mismatched"
+          # similar https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8355
+          honor_labels: false
           metrics_path: '/federate'
           params:
             'match[]':
-              - '{job="prometheus",__name__!="scrape_series_added"}'
-              - '{__name__=~"[a-z0-9A-Z].*",job!="prometheus"}'
+              - '{__name__=~"[a-z0-9A-Z].*",__name__!~"(scrape_.*|up)"}'
+#              - '{__name__=~"[a-z0-9A-Z].*",__name__!~"(scrape_.*|up)"}'
 #              - '{__name__=~"k6.*"}'
           static_configs:
             - targets:
@@ -77,6 +82,12 @@ receivers:
 
 processors:
   batch:
+  resourcedetection/system:
+    detectors: [ "system" ]
+    system:
+      hostname_sources:
+        - "dns"
+        - "os"
   probabilistic_sampler/sampleAll:
     sampling_percentage: 100
   attributes/addServiceEnvironment:
@@ -89,6 +100,24 @@ processors:
       - key: service.cluster
         value: patrik-majer-playground
         action: insert
+  # for some bugs around prometheus federate and otel collector logic
+  # https://github.com/open-telemetry/opentelemetry-collector-contrib/issues/8355
+  attributes/fixPrometheusLabelNames:
+    actions:
+      - key: service.name
+        from_attribute: exported_job
+        action: upsert
+      # "fixing" wrong extraction with federate+honored_labels: false
+      # https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/prometheusreceiver/internal/prom_to_otlp.go
+      # "action: delete" looks like it's not working for generated labels in prom_to_otlp.go
+      - key: net.host.port
+        value: "-"
+        action: upsert
+      - key: net.host.name
+        from_attribute: exported_instance
+        action: upsert
+#      - key: packeta_service_name
+#        action: delete
 
 exporters:
   logging:
@@ -137,27 +166,32 @@ service:
 #        - logging
 #        - otlp/lighstep
         - otlp/newrelic
-    metrics/otlp:
-      receivers: [ otlp ]
-      processors: [ batch ]
-      exporters: [logging, prometheusremotewrite/grafanacloud ]
+#    metrics/otlp:
+#      receivers: [ otlp ]
+#      processors: [ batch ]
+#      exporters: [logging, prometheusremotewrite/grafanacloud ]
 #      exporters: [ otlp/grafanacloud ]
     metrics/federatedprometheus:
       receivers:
         - prometheus
       processors:
+        - resourcedetection/system
         - attributes/addServiceEnvironment
         - attributes/addServiceCluster
+        - attributes/fixPrometheusLabelNames
         - batch
       exporters:
-        - prometheusremotewrite/grafanacloud
-#        - otlp/lighstep
+#        - prometheusremotewrite/grafanacloud
+        - otlp/lighstep
+#        - logging
     metrics/system:
-      receivers: [ hostmetrics, hostmetrics/disk ]
+      receivers:
+        - hostmetrics
+        - hostmetrics/disk
       processors:
         - attributes/addServiceEnvironment
         - attributes/addServiceCluster
         - batch
       exporters:
-        - prometheusremotewrite/grafanacloud
-#        - otlp/lighstep
+#        - prometheusremotewrite/grafanacloud
+        - otlp/lighstep
