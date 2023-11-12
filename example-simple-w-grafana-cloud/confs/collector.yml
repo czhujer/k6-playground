@@ -164,8 +164,8 @@ service:
         - batch
       exporters:
 #        - logging
-#        - otlp/lighstep
-        - otlp/newrelic
+        - otlp/lighstep
+#        - otlp/newrelic
 #    metrics/otlp:
 #      receivers: [ otlp ]
 #      processors: [ batch ]

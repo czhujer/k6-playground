@@ -14,3 +14,5 @@
 #### new relic
 - https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/get-started/opentelemetry-set-up-your-app/#collector-export
 - https://docs.newrelic.com/docs/more-integrations/open-source-telemetry-integrations/opentelemetry/collector/opentelemetry-collector-basic/
+### traefik
+- https://doc.traefik.io/traefik/user-guides/docker-compose/basic-example/#setup

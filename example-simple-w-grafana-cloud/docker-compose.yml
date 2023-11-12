@@ -40,7 +40,7 @@ services:
       - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY}
     volumes:
       - /:/hostfs
-#      - /var/run/docker.sock:/var/run/docker.sock
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
   k6:
     image: grafana/k6:0.47.0
     command:
@@ -58,6 +58,11 @@ services:
       - ./02-web-service-stages.js:/scripts/02-web-service-stages.js
 
   grafana:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=Host(`grafana.127.0.0.1.nip.io`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.routers.grafana.entrypoints=web"
     # https://hub.docker.com/r/grafana/grafana/tags
     image: grafana/grafana:latest
 #    networks:
@@ -65,18 +70,26 @@ services:
     ports:
       - "3000:3000"
     environment:
+    # https://grafana.com/docs/grafana/latest/setup-grafana/configure-grafana/#override-configuration-with-environment-variables
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_BASIC_ENABLED=false
+      - GF_DATE_FORMATS_DEFAULT_TIMEZONE=browser
+      - GF_TRACING_OPENTELEMETRY_OTLP_ADDRESS=otel-collector:4317
+#      tracing.opentelemetry.otlp:
+#        address: jaeger-operator-jaeger-collector.jaeger-system.svc:4317
     volumes:
 #      - ./dashboards:/var/lib/grafana/dashboards
 #      - ./grafana-dashboard.yaml:/etc/grafana/provisioning/dashboards/dashboard.yaml
       - ./grafana/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/datasource.yaml
 
   prometheus:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=Host(`prometheus.127.0.0.1.nip.io`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.routers.prometheus.entrypoints=web"
     image: prom/prometheus:v2.47.2
-#    environment:
-#      - OTEL_TRACES_SAMPLER=always_on
     command:
 #      - '--log.level=debug'
       - '--enable-feature=remote-write-receiver'
@@ -87,6 +100,7 @@ services:
 #      - monitoring
     ports:
       - "9090:9090"
+
   node-exporter:
     image: quay.io/prometheus/node-exporter:latest
     volumes:
@@ -108,3 +122,23 @@ services:
 #    networks:
 #      - back-tier
     restart: always
+
+  traefik:
+    image: "traefik:v3.0" # v2.10
+    container_name: "traefik"
+    command:
+      #- "--log.level=DEBUG"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--metrics.prometheus=true"
+      - "--tracing=true"
+      - "--tracing.openTelemetry.address=otel-collector:4317"
+      - "--tracing.openTelemetry.insecure=true"
+      - "--tracing.openTelemetry.grpc=true"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
