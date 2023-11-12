@@ -109,7 +109,7 @@ processors:
         action: upsert
       # "fixing" wrong extraction with federate+honored_labels: false
       # https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/prometheusreceiver/internal/prom_to_otlp.go
-      # "action: delete" looks like it's not working
+      # "action: delete" looks like it's not working for generated labels in prom_to_otlp.go
       - key: net.host.port
         value: "-"
         action: upsert
