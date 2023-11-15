@@ -16,11 +16,11 @@ receivers:
 #        compression: snappy
       http:
 
-#  docker_stats:
-#    endpoint: unix:///var/run/docker.sock
-#    collection_interval: 5s
-#    timeout: 20s
-#    api_version: 1.24
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 5s
+    timeout: 20s
+    api_version: 1.24 # 1.42
 
   hostmetrics:
     collection_interval: 30s
@@ -188,6 +188,7 @@ service:
       receivers:
         - hostmetrics
         - hostmetrics/disk
+        - docker_stats
       processors:
         - attributes/addServiceEnvironment
         - attributes/addServiceCluster
