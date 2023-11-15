@@ -1,2 +1,3 @@
 */.env
 **/.env
+/example-simple-w-grafana-cloud/dist/servicenow-cloudobservability-datasource/

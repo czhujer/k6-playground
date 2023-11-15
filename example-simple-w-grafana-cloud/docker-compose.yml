@@ -1,9 +1,10 @@
 ---
 version: "3.8"
 
-#volumes:
+volumes:
 #  esdata01:
 #    driver: local
+  grafana-storage:
 
 networks:
   default:
@@ -16,7 +17,6 @@ configs:
 
 services:
   otel-collector:
-    # container_name: otel-col
     deploy:
       resources:
         limits:
@@ -40,7 +40,8 @@ services:
       - NEW_RELIC_LICENSE_KEY=${NEW_RELIC_LICENSE_KEY}
     volumes:
       - /:/hostfs
-      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+      - "/var/run/docker.sock.raw:/var/run/docker.sock"
+
   k6:
     image: grafana/k6:0.47.0
     command:
@@ -75,11 +76,17 @@ services:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_BASIC_ENABLED=false
       - GF_DATE_FORMATS_DEFAULT_TIMEZONE=browser
+      - GF_ALLOW_LOADING_UNSIGNED_PLUGINS=servicenow-cloudobservability-datasource
+#      - GF_LOG_LEVEL=debug
+#      - GF_DEFAULT_APP_MODE=development
       - GF_TRACING_OPENTELEMETRY_OTLP_ADDRESS=otel-collector:4317
 #      tracing.opentelemetry.otlp:
 #        address: jaeger-operator-jaeger-collector.jaeger-system.svc:4317
     volumes:
-#      - ./dashboards:/var/lib/grafana/dashboards
+      - grafana-storage:/var/lib/grafana
+      - ./dist:/var/lib/grafana/plugins
+      #      - ./dashboards:/var/lib/grafana/dashboards
+#        - ./provisioning:/etc/grafana/provisioning
 #      - ./grafana-dashboard.yaml:/etc/grafana/provisioning/dashboards/dashboard.yaml
       - ./grafana/grafana-datasource.yaml:/etc/grafana/provisioning/datasources/datasource.yaml
 
@@ -125,7 +132,7 @@ services:
 
   traefik:
     image: "traefik:v3.0" # v2.10
-    container_name: "traefik"
+    # container_name: "traefik"
     command:
       #- "--log.level=DEBUG"
       - "--api.insecure=true"
@@ -142,3 +149,47 @@ services:
       - "8080:8080"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock:ro"
+
+  parca:
+    image: ghcr.io/parca-dev/parca:v0.20.0
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.parca.rule=Host(`parca.127.0.0.1.nip.io`)"
+      - "traefik.http.services.parca.loadbalancer.server.port=7070"
+      - "traefik.http.routers.parca.entrypoints=web"
+    ports:
+      - "7070:7070"
+    volumes:
+      - "./confs/parca.yaml:/etc/parca/parca.yaml"
+    command:
+      - "/parca"
+      - "--config-path=/etc/parca/parca.yaml"
+
+  #  docker run --rm -it --privileged --pid host ghcr.io/parca-dev/parca-agent:v0.27.0 /bin/parca-agent --node=docker-test
+  parca-agent:
+    image: ghcr.io/parca-dev/parca-agent:v0.27.0
+    pid: host
+    privileged: true
+    command:
+      - parca-agent
+#      - "--log-level=debug"
+      - --log-level=info
+      - --node=localhost-test
+      - --remote-store-address=parca:7070
+      - --remote-store-insecure
+    ports:
+      - "7071:7071"
+    volumes:
+      - "/var/run/dbus/system_bus_socket:/var/run/dbus/system_bus_socket"
+      - /run:/run
+      - /tmp:/tmp
+      - /lib/modules:/lib/modules
+      - /sys/fs/cgroup:/sys/fs/cgroup
+      - /sys/fs/bpf:/sys/fs/bpf
+      - /sys/kernel/debug:/sys/kernel/debug
+
+  parca-demo:
+    image: quay.io/polarsignals/pprof-example-app-go:v0.1.0
+
+
+
